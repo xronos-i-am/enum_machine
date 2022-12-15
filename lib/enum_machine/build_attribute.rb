@@ -4,8 +4,6 @@ module EnumMachine
   module BuildAttribute
 
     def self.call(enum_values:, i18n_scope:, machine: nil)
-      aliases = machine&.instance_variable_get(:@aliases) || {}
-
       Class.new(String) do
         define_method(:machine) { machine } if machine
 
@@ -47,18 +45,6 @@ module EnumMachine
               end
             RUBY
           end
-        end
-
-        aliases.each_key do |key|
-          class_eval <<-RUBY, __FILE__, __LINE__ + 1
-            # def forming?
-            #   machine.fetch_alias('forming').include?(self)
-            # end
-
-            def #{key}?
-              machine.fetch_alias('#{key}').include?(self)
-            end
-          RUBY
         end
 
         if i18n_scope

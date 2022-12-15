@@ -4,8 +4,6 @@ module EnumMachine
   module BuildClass
 
     def self.call(enum_values:, i18n_scope:, machine: nil)
-      aliases = machine&.instance_variable_get(:@aliases) || {}
-
       Class.new do
         define_singleton_method(:machine) { machine } if machine
         define_singleton_method(:values) { enum_values }
@@ -28,18 +26,6 @@ module EnumMachine
 
         enum_values.each do |enum_value|
           const_set enum_value.underscore.upcase, enum_value.freeze
-        end
-
-        aliases.each_key do |key|
-          class_eval <<-RUBY, __FILE__, __LINE__ + 1
-            # def self.forming
-            #   @alias_forming ||= machine.fetch_alias('forming').freeze
-            # end
-
-            def self.#{key}
-              @alias_#{key} ||= machine.fetch_alias('#{key}').freeze
-            end
-          RUBY
         end
 
         private_class_method def self.const_missing(name)

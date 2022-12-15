@@ -12,7 +12,7 @@ module EnumMachine
       @transitions = {}
       @before_transition = {}
       @after_transition = {}
-      @aliases = {}
+      @alias_names = []
     end
 
     # public api
@@ -57,12 +57,17 @@ module EnumMachine
       @any ||= AnyEnumValues.new(enum_values + [nil])
     end
 
-    def aliases(hash)
-      @aliases = hash
-    end
-
-    def fetch_aliases
-      @aliases
+    def aliases(&block)
+      if block_given?
+        @aliases_block = block
+        methods_was = methods
+        instance_eval(&block)
+        methods_now = methods
+        @alias_names = methods_now - methods_was
+        p (methods - Object.methods).sort
+      else
+        @aliases_block
+      end
     end
 
     def transitions?
@@ -82,11 +87,6 @@ module EnumMachine
     # internal api
     def fetch_after_transitions(from__to)
       @after_transition.fetch(from__to, [])
-    end
-
-    # internal api
-    def fetch_alias(alias_key)
-      array_wrap(@aliases.fetch(alias_key))
     end
 
     # internal api

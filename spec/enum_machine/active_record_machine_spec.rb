@@ -12,10 +12,10 @@ RSpec.describe 'DriverActiveRecord', :ar do
           %w[cancelled approved] => 'activated',
           'activated'            => %w[created cancelled],
         )
-        aliases(
-          'forming' => %w[created approved],
-          'pending' => nil,
-        )
+        aliases do
+          def forming = %w[created approved]
+          def pending = nil
+        end
         before_transition 'created' => 'approved' do |item|
           item.errors.add(:state, :invalid, message: 'invalid transition') if item.color.red?
         end
@@ -87,6 +87,7 @@ RSpec.describe 'DriverActiveRecord', :ar do
   it 'test alias' do
     m = model.new(state: 'created')
 
+    expect(m.state.forming).to eq 'forming'
     expect(m.state.forming?).to eq true
     expect(model::STATE.forming).to eq %w[created approved]
   end
