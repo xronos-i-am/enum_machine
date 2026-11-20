@@ -6,6 +6,7 @@ require_relative "enum_machine/build_value_class"
 require_relative "enum_machine/attribute_persistence_methods"
 require_relative "enum_machine/build_enum_class"
 require_relative "enum_machine/machine"
+require_relative "enum_machine/state_context"
 require "active_support"
 require "active_support/core_ext/string"
 
@@ -26,6 +27,9 @@ module EnumMachine
       super("Transition #{from.inspect} => #{to.inspect} not defined in enum_machine :#{machine.attr_name}")
     end
   end
+
+  # Raised by a transition callback that requires a context: `with_state_context` was not opened.
+  class ContextRequiredError < Error; end
 
   def self.[](args)
     DriverSimpleClass.call(args)

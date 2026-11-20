@@ -32,7 +32,7 @@ module EnumMachine
               value_was, value_new = *attr_changes
               self.class::#{enum_const_name}.machine.fetch_before_transitions(attr_changes).each do |block|
                 @__enum_machine_#{attr}_forced_value = value_was
-                instance_exec(self, value_was, value_new, &block)
+                instance_exec(self, value_was, value_new, context: ::EnumMachine::StateContext.current, &block)
               ensure
                 @__enum_machine_#{attr}_forced_value = nil
               end
@@ -41,7 +41,9 @@ module EnumMachine
 
           def __enum_machine_#{attr}_after_save
             if (attr_changes = previous_changes['#{attr}']) && !@__enum_machine_#{attr}_skip_transitions
-              self.class::#{enum_const_name}.machine.fetch_after_transitions(attr_changes).each { |block| instance_exec(self, *attr_changes, &block) }
+              self.class::#{enum_const_name}.machine.fetch_after_transitions(attr_changes).each do |block|
+                instance_exec(self, *attr_changes, context: ::EnumMachine::StateContext.current, &block)
+              end
             end
           end
         RUBY
@@ -105,6 +107,7 @@ module EnumMachine
           define_singleton_method(:included) do |decorating_class|
             decorating_class.prepend define_methods
             decorating_class.const_set enum_const_name, enum_class
+            decorating_class.extend StateContext::ClassMethods
           end
         end
       enum_class.define_singleton_method(:enum_decorator) { enum_decorator }

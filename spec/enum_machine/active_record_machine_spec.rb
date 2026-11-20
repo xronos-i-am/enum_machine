@@ -182,6 +182,147 @@ RSpec.describe "DriverActiveRecord", :ar do
     }
   end
 
+  context "when transitions run inside a state context" do
+    let(:context_model) do
+      Class.new(TestModel) do
+        enum_machine :state, %w[created approved cancelled] do
+          transitions(
+            nil        => "created",
+            "created"  => %w[approved cancelled],
+            "approved" => "cancelled",
+          )
+          before_transition "created" => "approved" do |item, _from, _to, context:|
+            item.message = "before #{context[:action]}"
+          end
+          after_transition "created" => "approved" do |item, _from, _to, context:|
+            item.params = "after #{context[:action]}"
+          end
+        end
+      end
+    end
+
+    it "passes the context to before and after callbacks" do
+      m = context_model.create!(state: "created")
+
+      context_model.with_state_context(action: "approve") { m.update!(state: "approved") }
+
+      expect(m.params).to eq "after approve"
+      expect(m.reload.message).to eq "before approve"
+    end
+
+    it "passes an empty hash to callbacks outside a context block" do
+      seen = :not_called
+      model_without_context =
+        Class.new(TestModel) do
+          enum_machine :state, %w[created approved] do
+            transitions nil => "created", "created" => "approved"
+            before_transition("created" => "approved") { |_item, _from, _to, context:| seen = context }
+          end
+        end
+
+      model_without_context.create!(state: "created").update!(state: "approved")
+
+      expect(seen).to eq({})
+    end
+
+    it "replaces the context in a nested block and shows the outer one after it" do
+      model_with_nested_context =
+        Class.new(TestModel) do
+          enum_machine :state, %w[created approved cancelled] do
+            transitions nil => "created", "created" => "approved", "approved" => "cancelled"
+            after_transition(any => any) { |item, _from, _to, context:| item.color = context[:marker] }
+          end
+        end
+
+      m = model_with_nested_context.create!(state: "created")
+
+      model_with_nested_context.with_state_context(marker: "outer", extra: true) do
+        model_with_nested_context.with_state_context(marker: "inner") do
+          expect(model_with_nested_context.state_context).to eq marker: "inner"
+
+          m.update!(state: "approved")
+        end
+        expect(m.color).to eq "inner"
+        expect(model_with_nested_context.state_context).to eq marker: "outer", extra: true
+
+        m.update!(state: "cancelled")
+        expect(m.color).to eq "outer"
+      end
+
+      expect(model_with_nested_context.state_context).to eq({})
+    end
+
+    it "passes the context for every way of changing the state" do
+      model_with_any_transition =
+        Class.new(TestModel) do
+          enum_machine :state, %w[created approved cancelled] do
+            transitions(
+              nil         => "created",
+              "created"   => %w[approved cancelled],
+              "approved"  => "cancelled",
+              "cancelled" => "approved",
+            )
+            before_transition(any => any) { |item, _from, _to, context:| item.message = context[:marker] }
+          end
+        end
+
+      m = model_with_any_transition.create!(state: "created")
+
+      model_with_any_transition.with_state_context(marker: "to_approved!") { m.state.to_approved! }
+      expect(m.message).to eq "to_approved!"
+
+      model_with_any_transition.with_state_context(marker: "update!") { m.update!(state: "cancelled") }
+      expect(m.message).to eq "update!"
+
+      model_with_any_transition.with_state_context(marker: "save!") do
+        m.state = "approved"
+        m.save!
+      end
+      expect(m.message).to eq "save!"
+    end
+
+    it "lets a callback mark the operation through the context hash" do
+      model_with_marker =
+        Class.new(TestModel) do
+          enum_machine :state, %w[created approved] do
+            transitions nil => "created", "created" => "approved"
+            before_transition("created" => "approved") { |item, _from, _to, context:| context[:dirty_order_id] = item.id }
+          end
+        end
+
+      marked = nil
+      m = model_with_marker.create!(state: "created")
+
+      model_with_marker.with_state_context(locked_order_id: 1) do |context|
+        m.update!(state: "approved")
+        marked = context[:dirty_order_id]
+      end
+
+      expect(marked).to eq m.id
+    end
+
+    it "lets a callback require a context key" do
+      model_with_required_context =
+        Class.new(TestModel) do
+          enum_machine :state, %w[created approved] do
+            transitions nil => "created", "created" => "approved"
+            before_transition "created" => "approved" do |item, _from, _to, context:|
+              raise EnumMachine::ContextRequiredError, "Order must be locked" unless context.key?(:locks)
+
+              item.message = context.fetch(:locks)
+            end
+          end
+        end
+
+      m = model_with_required_context.create!(state: "created")
+
+      expect { m.update!(state: "approved") }.to raise_error(EnumMachine::ContextRequiredError, "Order must be locked")
+
+      model_with_required_context.with_state_context(locks: "3074665") { m.update!(state: "approved") }
+      expect(m.reload.message).to eq "3074665"
+    end
+  end
+
   it "dup AR object not linked with original" do
     m = model.create(state: "created", color: "green")
     m.state # init parent

@@ -191,6 +191,49 @@ FactoryBot.define do
 end
 ```
 
+#### Transition context
+
+`with_state_context` passes an operation context — a Hash — to transition callbacks. It is useful when a
+transition needs to know what operation triggered it, and when several transitions belong to one
+operation (for example, a single order recalculation):
+
+```ruby
+class LineItem < ActiveRecord::Base
+  enum_machine :state, %w[booked absent] do
+    transitions("booked" => "absent")
+
+    before_transition "booked" => "absent" do |item, _from, _to, context:|
+      next if context.fetch(:locked_order_id) == item.order_id
+
+      raise EnumMachine::ContextRequiredError, "Order #{item.order_id} must be locked"
+    end
+
+    after_transition "booked" => "absent" do |item, _from, _to, context:|
+      context[:dirty_order_id] = item.order_id
+    end
+  end
+end
+
+LineItem.with_state_context(locked_order_id: order.id) do |context|
+  line_item.state.to_absent!
+
+  order.recalculate! if context[:dirty_order_id]
+end
+
+LineItem.state_context # => {} outside the block
+```
+
+- Callbacks always get a Hash: `{}` when a transition runs outside a context block.
+- The block receives the same Hash the callbacks get, so a callback can mark the operation
+  (`context[:dirty_order_id] = item.order_id`) and the block reads the mark after the transitions.
+- Nested blocks replace the context for their scope; the outer Hash is restored on exit. There is one
+  context per operation, so a nested block must set everything its transitions need itself.
+- The context is fiber-local: a new fiber (and a new thread) starts with an empty Hash, so the context
+  never leaks to other requests or jobs.
+- `context.fetch(:key)` fails fast when a callback requires a key that the operation did not set;
+  `context[:key]` is for optional keys.
+
+
 ### I18n
 
 **ru.yml**
